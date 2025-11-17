@@ -1632,6 +1632,39 @@ size_t SDL_ShaderCross_INTERNAL_GetIOVarsStringLength(
     return total_string_size;
 }
 
+static size_t SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(
+    spvc_reflected_resource* reflected_resources,
+    size_t num_resources)
+{
+    size_t total_string_size = 0;
+    for (size_t i = 0; i < num_resources; i++) {
+        spvc_reflected_resource* resource = &reflected_resources[i];
+        total_string_size += SDL_strlen(resource->name) + 1;
+    }
+    return total_string_size;
+}
+
+static void SDL_ShaderCross_INTERNAL_GetResourceBindings(
+    spvc_compiler compiler,
+    spvc_reflected_resource* reflected_resources,
+    size_t num_resources,
+    SDL_ShaderCross_ResourceBindingInfo* bindings,
+    char *name_buffer
+) {
+    size_t name_buffer_offset = 0;
+    for (size_t i = 0; i < num_resources; i++) {
+        SDL_ShaderCross_ResourceBindingInfo* binding = &bindings[i];
+        spvc_reflected_resource* resource = &reflected_resources[i];
+
+        binding->name = name_buffer + name_buffer_offset;
+        size_t length_name = SDL_strlen(resource->name) + 1;
+        SDL_memcpy(binding->name, resource->name, length_name);
+        name_buffer_offset += length_name;
+        
+        binding->binding = spvc_compiler_get_decoration(compiler, resource->id, SpvDecorationBinding);
+    }
+}
+
 void SDL_ShaderCross_INTERNAL_GetIOVars(
     spvc_compiler compiler,
     spvc_reflected_resource* reflected_resources,
@@ -1859,12 +1892,92 @@ SDL_ShaderCross_GraphicsShaderMetadata * SDL_ShaderCross_ReflectGraphicsSPIRV(
     }
     string_length_output = SDL_ShaderCross_INTERNAL_GetIOVarsStringLength(reflected_resources, num_outputs);
 
+    // Get resource binding info and calculate string lengths
+    size_t string_length_samplers = 0;
+    size_t string_length_storage_textures = 0;
+    size_t string_length_storage_buffers = 0;
+    size_t string_length_uniform_buffers = 0;
+
+    // Samplers string length - use temp variable to avoid changing counts
+    size_t temp_count = 0;
+    result = spvc_resources_get_resource_list_for_type(
+        resources,
+        SPVC_RESOURCE_TYPE_SAMPLED_IMAGE,
+        (const spvc_reflected_resource **)&reflected_resources,
+        &temp_count);
+    if (result >= 0 && temp_count > 0) {
+        string_length_samplers = SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(reflected_resources, temp_count);
+    }
+    // Check for separate samplers (HLSL case)
+    if (temp_count == 0 && num_separate_samplers > 0) {
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_count);
+        if (result >= 0 && temp_count > 0) {
+            string_length_samplers = SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(reflected_resources, temp_count);
+        }
+    }
+
+    // Storage textures string length
+    result = spvc_resources_get_resource_list_for_type(
+        resources,
+        SPVC_RESOURCE_TYPE_STORAGE_IMAGE,
+        (const spvc_reflected_resource **)&reflected_resources,
+        &temp_count);
+    if (result >= 0 && temp_count > 0) {
+        string_length_storage_textures = SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(reflected_resources, temp_count);
+    }
+    // Check for separate images (HLSL case) - add their string lengths too
+    if (num_separate_images > num_separate_samplers) {
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_SEPARATE_IMAGE,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_count);
+        if (result >= 0 && temp_count > num_separate_samplers) {
+            for (size_t i = num_separate_samplers; i < temp_count; i++) {
+                string_length_storage_textures += SDL_strlen(reflected_resources[i].name) + 1;
+            }
+        }
+    }
+
+    // Storage buffers string length
+    result = spvc_resources_get_resource_list_for_type(
+        resources,
+        SPVC_RESOURCE_TYPE_STORAGE_BUFFER,
+        (const spvc_reflected_resource **)&reflected_resources,
+        &temp_count);
+    if (result >= 0 && temp_count > 0) {
+        string_length_storage_buffers = SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(reflected_resources, temp_count);
+    }
+
+    // Uniform buffers string length
+    result = spvc_resources_get_resource_list_for_type(
+        resources,
+        SPVC_RESOURCE_TYPE_UNIFORM_BUFFER,
+        (const spvc_reflected_resource **)&reflected_resources,
+        &temp_count);
+    if (result >= 0 && temp_count > 0) {
+        string_length_uniform_buffers = SDL_ShaderCross_INTERNAL_GetResourceBindingStringLength(reflected_resources, temp_count);
+    }
+
+    // Calculate memory offsets
     size_t offset_inputs = SDL_upper_multiple_power2(sizeof(SDL_ShaderCross_GraphicsShaderMetadata), sizeof(size_t));
     size_t offset_outputs = offset_inputs + num_inputs * sizeof(SDL_ShaderCross_IOVarMetadata);
-    size_t offset_inputnames = offset_outputs + num_outputs * sizeof(SDL_ShaderCross_IOVarMetadata);
+    size_t offset_samplers = offset_outputs + num_outputs * sizeof(SDL_ShaderCross_IOVarMetadata);
+    size_t offset_storage_textures = offset_samplers + num_texture_samplers * sizeof(SDL_ShaderCross_ResourceBindingInfo);
+    size_t offset_storage_buffers = offset_storage_textures + num_storage_textures * sizeof(SDL_ShaderCross_ResourceBindingInfo);
+    size_t offset_uniform_buffers = offset_storage_buffers + num_storage_buffers * sizeof(SDL_ShaderCross_ResourceBindingInfo);
+    size_t offset_inputnames = offset_uniform_buffers + num_uniform_buffers * sizeof(SDL_ShaderCross_ResourceBindingInfo);
     size_t offset_outputnames = offset_inputnames + string_length_input;
+    size_t offset_sampler_names = offset_outputnames + string_length_output;
+    size_t offset_storage_texture_names = offset_sampler_names + string_length_samplers;
+    size_t offset_storage_buffer_names = offset_storage_texture_names + string_length_storage_textures;
+    size_t offset_uniform_buffer_names = offset_storage_buffer_names + string_length_storage_buffers;
 
-    char *allocMemory = SDL_malloc(offset_outputnames + string_length_output);
+    char *allocMemory = SDL_malloc(offset_uniform_buffer_names + string_length_uniform_buffers);
     if (!allocMemory) {
         spvc_context_destroy(context);
         return NULL;
@@ -1873,6 +1986,10 @@ SDL_ShaderCross_GraphicsShaderMetadata * SDL_ShaderCross_ReflectGraphicsSPIRV(
     SDL_ShaderCross_GraphicsShaderMetadata *allocMetadata = (SDL_ShaderCross_GraphicsShaderMetadata *)allocMemory;
     allocMetadata->inputs = (SDL_ShaderCross_IOVarMetadata *)(allocMemory + offset_inputs);
     allocMetadata->outputs = (SDL_ShaderCross_IOVarMetadata *)(allocMemory + offset_outputs);
+    allocMetadata->samplers = (SDL_ShaderCross_ResourceBindingInfo *)(allocMemory + offset_samplers);
+    allocMetadata->storage_textures = (SDL_ShaderCross_ResourceBindingInfo *)(allocMemory + offset_storage_textures);
+    allocMetadata->storage_buffers = (SDL_ShaderCross_ResourceBindingInfo *)(allocMemory + offset_storage_buffers);
+    allocMetadata->uniform_buffers = (SDL_ShaderCross_ResourceBindingInfo *)(allocMemory + offset_uniform_buffers);
 
     // Inputs (stage 2: fill in inputs)
     size_t num_inputs_run2 = 0;
@@ -1903,6 +2020,98 @@ SDL_ShaderCross_GraphicsShaderMetadata * SDL_ShaderCross_ReflectGraphicsSPIRV(
         return false;
     }
     SDL_ShaderCross_INTERNAL_GetIOVars(compiler, reflected_resources, num_outputs, allocMetadata->outputs, allocMemory + offset_outputnames);
+
+    // Fill in resource bindings
+    // Samplers
+    if (num_texture_samplers > 0) {
+        size_t temp_sampler_count = 0;
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_SAMPLED_IMAGE,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_sampler_count);
+        if (result < 0 || temp_sampler_count == 0) {
+            // Try separate samplers
+            result = spvc_resources_get_resource_list_for_type(
+                resources,
+                SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS,
+                (const spvc_reflected_resource **)&reflected_resources,
+                &temp_sampler_count);
+        }
+        if (result >= 0 && temp_sampler_count > 0) {
+            SDL_ShaderCross_INTERNAL_GetResourceBindings(compiler, reflected_resources, temp_sampler_count,
+                                                          allocMetadata->samplers, allocMemory + offset_sampler_names);
+        }
+    }
+
+    // Storage textures
+    if (num_storage_textures > 0) {
+        size_t temp_storage_tex_count = 0;
+        size_t current_index = 0;
+        char *current_name_buffer = allocMemory + offset_storage_texture_names;
+        
+        // First, get storage images
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_STORAGE_IMAGE,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_storage_tex_count);
+        if (result >= 0 && temp_storage_tex_count > 0) {
+            SDL_ShaderCross_INTERNAL_GetResourceBindings(compiler, reflected_resources, temp_storage_tex_count,
+                                                          allocMetadata->storage_textures, current_name_buffer);
+            current_index = temp_storage_tex_count;
+            // Calculate used name buffer space
+            for (size_t i = 0; i < temp_storage_tex_count; i++) {
+                current_name_buffer += SDL_strlen(allocMetadata->storage_textures[i].name) + 1;
+            }
+        }
+        
+        // Handle separate images (HLSL case) - only the ones after samplers
+        if (num_separate_images > num_separate_samplers) {
+            size_t temp_separate_count = 0;
+            result = spvc_resources_get_resource_list_for_type(
+                resources,
+                SPVC_RESOURCE_TYPE_SEPARATE_IMAGE,
+                (const spvc_reflected_resource **)&reflected_resources,
+                &temp_separate_count);
+            if (result >= 0 && temp_separate_count > num_separate_samplers) {
+                size_t num_storage_from_separate = temp_separate_count - num_separate_samplers;
+                SDL_ShaderCross_INTERNAL_GetResourceBindings(compiler, reflected_resources + num_separate_samplers,
+                                                              num_storage_from_separate,
+                                                              allocMetadata->storage_textures + current_index,
+                                                              current_name_buffer);
+            }
+        }
+    }
+
+    // Storage buffers
+    if (num_storage_buffers > 0) {
+        size_t temp_storage_buf_count = 0;
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_STORAGE_BUFFER,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_storage_buf_count);
+        if (result >= 0 && temp_storage_buf_count > 0) {
+            SDL_ShaderCross_INTERNAL_GetResourceBindings(compiler, reflected_resources, temp_storage_buf_count,
+                                                          allocMetadata->storage_buffers, allocMemory + offset_storage_buffer_names);
+        }
+    }
+
+    // Uniform buffers
+    if (num_uniform_buffers > 0) {
+        size_t temp_uniform_buf_count = 0;
+        result = spvc_resources_get_resource_list_for_type(
+            resources,
+            SPVC_RESOURCE_TYPE_UNIFORM_BUFFER,
+            (const spvc_reflected_resource **)&reflected_resources,
+            &temp_uniform_buf_count);
+        if (result >= 0 && temp_uniform_buf_count > 0) {
+            SDL_ShaderCross_INTERNAL_GetResourceBindings(compiler, reflected_resources, temp_uniform_buf_count,
+                                                          allocMetadata->uniform_buffers, allocMemory + offset_uniform_buffer_names);
+        }
+    }
+
     spvc_context_destroy(context);
 
     allocMetadata->resource_info.num_samplers = num_texture_samplers;
