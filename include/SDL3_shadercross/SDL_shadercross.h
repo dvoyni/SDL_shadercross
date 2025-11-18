@@ -75,6 +75,12 @@ typedef struct SDL_ShaderCross_GraphicsShaderResourceInfo
     Uint32 num_uniform_buffers;              /**< The number of uniform buffers defined in the shader. */
 } SDL_ShaderCross_GraphicsShaderResourceInfo;
 
+typedef struct SDL_ShaderCross_ResourceBindingInfo
+{
+    char *name;               /**< The UTF-8 name of the resource. */
+    Uint32 binding;           /**< The binding number of the resource. */
+} SDL_ShaderCross_ResourceBindingInfo;
+
 typedef struct SDL_ShaderCross_GraphicsShaderMetadata
 {
     SDL_ShaderCross_GraphicsShaderResourceInfo resource_info; /**< Sub-struct containing the resource info of the shader. */
@@ -82,6 +88,10 @@ typedef struct SDL_ShaderCross_GraphicsShaderMetadata
     SDL_ShaderCross_IOVarMetadata *inputs;   /**< The inputs defined in the shader. */
     Uint32 num_outputs;                      /**< The number of outputs defined in the shader. */
     SDL_ShaderCross_IOVarMetadata *outputs;  /**< The outputs defined in the shader. */
+    SDL_ShaderCross_ResourceBindingInfo *samplers;            /**< The sampler bindings defined in the shader. */
+    SDL_ShaderCross_ResourceBindingInfo *storage_textures;    /**< The storage texture bindings defined in the shader. */
+    SDL_ShaderCross_ResourceBindingInfo *storage_buffers;     /**< The storage buffer bindings defined in the shader. */
+    SDL_ShaderCross_ResourceBindingInfo *uniform_buffers;     /**< The uniform buffer bindings defined in the shader. */
 } SDL_ShaderCross_GraphicsShaderMetadata;
 
 typedef struct SDL_ShaderCross_ComputePipelineMetadata
@@ -335,13 +345,34 @@ extern SDL_DECLSPEC void * SDLCALL SDL_ShaderCross_CompileDXILFromHLSL(
  * - `SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING`: a UTF-8 name to be used with the shader. Relevant for use with debugging tools like Renderdoc.
  * - `SDL_SHADERCROSS_PROP_SHADER_CULL_UNUSED_BINDINGS_BOOLEAN`: when true, indicates that the compiler should not cull unused shader resources. This behavior is disabled by default.
  *
- * \param info a struct describing the shader to transpile.
+ * \param info a struct describing the shader to compile.
  * \param size filled in with the bytecode buffer size.
  * \returns an SDL_malloc'd buffer containing SPIRV bytecode.
  *
  * \threadsafety It is safe to call this function from any thread.
  */
 extern SDL_DECLSPEC void * SDLCALL SDL_ShaderCross_CompileSPIRVFromHLSL(
+    const SDL_ShaderCross_HLSL_Info *info,
+    size_t *size);
+
+/**
+ * Compile to SPIRV bytecode from GLSL code.
+ *
+ * You must SDL_free the returned buffer once you are done with it.
+ *
+ * These are the optional properties that can be used:
+ *
+ * - `SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN`: allows debug info to be emitted when relevant. Should only be used with debugging tools like Renderdoc.
+ * - `SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING`: a UTF-8 name to be used with the shader. Relevant for use with debugging tools like Renderdoc.
+ * - `SDL_SHADERCROSS_PROP_SHADER_CULL_UNUSED_BINDINGS_BOOLEAN`: when true, indicates that the compiler should not cull unused shader resources. This behavior is disabled by default.
+ *
+ * \param info a struct describing the shader to compile.
+ * \param size filled in with the bytecode buffer size.
+ * \returns an SDL_malloc'd buffer containing SPIRV bytecode.
+ *
+ * \threadsafety It is safe to call this function from any thread.
+ */
+extern SDL_DECLSPEC void * SDLCALL SDL_ShaderCross_CompileSPIRVFromGLSL(
     const SDL_ShaderCross_HLSL_Info *info,
     size_t *size);
 

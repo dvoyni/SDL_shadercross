@@ -36,6 +36,7 @@ endif()
 
 # Options
 option(SDLSHADERCROSS_DXC "Enable HLSL compilation via DXC" ON)
+option(SDLSHADERCROSS_GLSLANG "Enable GLSL compilation via shaderc/glslang" ON)
 option(SDLSHADERCROSS_SHARED "Build shared SDL_shadercross library" ${SDLSHADERCROSS_SHARED_DEFAULT})
 option(SDLSHADERCROSS_STATIC "Build static SDL_shadercross library" ${SDLSHADERCROSS_STATIC_DEFAULT})
 option(SDLSHADERCROSS_SPIRVCROSS_SHARED "Link to shared library variants of dependencies" ON)
@@ -115,6 +116,7 @@ if(SDLSHADERCROSS_VENDORED)
 	sdl_check_project_in_subfolder(external/SPIRV-Tools SPIRV-Tools SDLSHADERCROSS_VENDORED)
 	add_subdirectory(external/SPIRV-Tools EXCLUDE_FROM_ALL)
 
+
 	sdl_check_project_in_subfolder(external/DirectXShaderCompiler DirectXShaderCompiler SDLSHADERCROSS_VENDORED)
 	if(MINGW)
 		set(CMAKE_C_COMPILER_ARCHITECTURE_ID "${SDL_CPU_NAMES}")
@@ -159,6 +161,15 @@ else()
 	if(SDLSHADERCROSS_DXC)
 		set(DirectXShaderCompiler_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/DirectXShaderCompiler-binaries")
 		find_package(DirectXShaderCompiler REQUIRED)
+	endif()
+endif()
+
+# shaderc is always found via find_package, even in vendored mode
+if(SDLSHADERCROSS_GLSLANG)
+	if(NOT TARGET shaderc)
+		# Look for shaderc in external/shaderc-binaries first
+		set(shaderc_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/shaderc-binaries/lib/cmake/shaderc" CACHE PATH "Path to shaderc cmake config")
+		find_package(shaderc REQUIRED)
 	endif()
 endif()
 
@@ -243,7 +254,11 @@ foreach(target IN LISTS SDL3_shadercross_targets)
 	target_compile_features(${target} PRIVATE c_std_99)
 
 	if(SDLSHADERCROSS_DXC)
-		add_compile_definitions(SDL_SHADERCROSS_DXC)
+		target_compile_definitions(${target} PRIVATE SDL_SHADERCROSS_DXC)
+	endif()
+
+	if(SDLSHADERCROSS_GLSLANG)
+		target_compile_definitions(${target} PRIVATE SDL_SHADERCROSS_GLSLANG)
 	endif()
 
 	if(SDLSHADERCROSS_SPIRVCROSS_SHARED)
@@ -253,6 +268,9 @@ foreach(target IN LISTS SDL3_shadercross_targets)
 	endif()
 	if(SDLSHADERCROSS_DXC)
 		target_link_libraries(${target} PRIVATE DirectXShaderCompiler::dxcompiler)
+	endif()
+	if(SDLSHADERCROSS_GLSLANG)
+		target_link_libraries(${target} PRIVATE shaderc)
 	endif()
 	if(NOT SDLSHADERCROSS_SPIRVCROSS_SHARED)
 		# spirv-cross uses C++
