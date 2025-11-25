@@ -36,8 +36,8 @@ else:
     raise RuntimeError("Unsupported platform")
 
 WORKING_DIR = ".."
-BIN_INSTALL_DIR = "../bin"
-LIB_INSTALL_DIR = "../bin"
+BIN_INSTALL_DIR = "./bin"
+LIB_INSTALL_DIR = "./bin"
 
 
 def main():
@@ -155,7 +155,7 @@ def install_binaries_macos():
 
     sdl_build_dir = os.path.join(WORKING_DIR, "SDL", "build")
 
-    shutil.copy(os.path.join(sdl_build_dir, "libSDL3.0.dylib"), LIB_INSTALL_DIR)
+    #shutil.copy(os.path.join(sdl_build_dir, "libSDL3.0.dylib"), LIB_INSTALL_DIR)
 
     shadercross_bin = os.path.join(BIN_INSTALL_DIR, "shadercross")
 
@@ -200,7 +200,7 @@ def install_binaries_windows():
 
     shutil.copy(os.path.join(directx_shader_compiler_build_dir, "dxcompiler.dll"), LIB_INSTALL_DIR)
 
-    sdl_build_dir = os.path.join(WORKING_DIR, "SDL", "build")
+    #sdl_build_dir = os.path.join(WORKING_DIR, "SDL", "build")
 
     shutil.copy(os.path.join(sdl_build_dir, "SDL3.dll"), LIB_INSTALL_DIR)
 
@@ -222,7 +222,7 @@ def install_binaries_linux():
 
     shutil.copy(os.path.join(directx_shader_compiler_build_dir, "libdxcompiler.so"), LIB_INSTALL_DIR)
 
-    sdl_build_dir = os.path.join(WORKING_DIR, "SDL", "build")
+    #sdl_build_dir = os.path.join(WORKING_DIR, "SDL", "build")
 
     shutil.copy(os.path.join(sdl_build_dir, "libSDL3.so.0"), LIB_INSTALL_DIR)
 
